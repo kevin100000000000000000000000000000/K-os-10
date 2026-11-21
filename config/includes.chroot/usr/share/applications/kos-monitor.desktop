@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=KOS System Monitor
+Comment=View CPU and memory status
+Exec=kos-monitor
+Icon=utilities-system-monitor
+Terminal=false
+Type=Application
+Categories=System;Monitor;X-KOS;

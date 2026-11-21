@@ -1,0 +1,50 @@
+#!/usr/bin/python3
+import gi, subprocess
+gi.require_version("Gtk", "3.0")
+from gi.repository import Gtk, Gdk
+
+class UpdateCenter(Gtk.Window):
+    def __init__(self):
+        super().__init__(title="KOS Update Center")
+        self.set_default_size(600, 420)
+        css = Gtk.CssProvider()
+        css.load_from_path("/usr/share/kos/kos.css")
+        Gtk.StyleContext.add_provider_for_screen(Gdk.Screen.get_default(), css,
+                                                 Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
+        box.set_margin_top(24); box.set_margin_start(24); box.set_margin_end(24)
+        self.add(box)
+        box.pack_start(Gtk.Label(label="KOS Update Center"), False, False, 0)
+        self.status = Gtk.Label(label="Updates have not been checked in this session.")
+        self.status.set_wrap(True)
+        box.pack_start(self.status, False, False, 0)
+        check = Gtk.Button(label="Check for updates")
+        check.connect("clicked", self.check)
+        box.pack_start(check, False, False, 0)
+        upgrade = Gtk.Button(label="Install updates")
+        upgrade.connect("clicked", self.upgrade)
+        box.pack_start(upgrade, False, False, 0)
+
+    def check(self, _button):
+        proc = subprocess.Popen(["pkexec", "apt-get", "update"],
+                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        self.status.set_text("Checking for package updates...")
+        proc.wait()
+        if proc.returncode == 0:
+            result = subprocess.run(["apt-get", "--just-print", "upgrade"],
+                                    stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+            lines = [line for line in result.stdout.splitlines() if line.startswith("Inst ")]
+            self.status.set_text(f"{len(lines)} package update(s) available." if lines else "System is up to date.")
+        else:
+            self.status.set_text("Update check failed. Review authentication and package logs.")
+
+    def upgrade(self, _button):
+        subprocess.Popen(["pkexec", "apt-get", "--yes", "dist-upgrade"],
+                         start_new_session=True)
+        self.status.set_text("Update process started in a privileged terminal.")
+
+if __name__ == "__main__":
+    win = UpdateCenter()
+    win.connect("destroy", Gtk.main_quit)
+    win.show_all()
+    Gtk.main()

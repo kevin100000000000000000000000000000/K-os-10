@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=KOS Browser
+Comment=Browse the web with Firefox
+Exec=firefox-esr
+Icon=web-browser
+Terminal=false
+Type=Application
+Categories=Network;WebBrowser;X-KOS;

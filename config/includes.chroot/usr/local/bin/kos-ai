@@ -1,0 +1,158 @@
+#!/usr/bin/python3
+import gi, json, os, threading
+gi.require_version("Gtk", "3.0")
+from gi.repository import Gtk, Gdk
+import requests
+import keyring
+
+CONFIG_DIR = os.path.expanduser("~/.config/kos-ai")
+CONFIG_FILE = os.path.join(CONFIG_DIR, "config.json")
+HISTORY_FILE = os.path.join(CONFIG_DIR, "history.json")
+
+class KOSAI(Gtk.Window):
+    def __init__(self):
+        super().__init__(title="KOS AI")
+        self.set_default_size(760, 600)
+        self.set_position(Gtk.WindowPosition.CENTER)
+        os.makedirs(CONFIG_DIR, mode=0o700, exist_ok=True)
+        self.load_config()
+        css = Gtk.CssProvider()
+        css.load_from_path("/usr/share/kos/kos.css")
+        Gtk.StyleContext.add_provider_for_screen(Gdk.Screen.get_default(), css,
+                                                 Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+        outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        outer.set_margin_start(12); outer.set_margin_end(12); outer.set_margin_top(12); outer.set_margin_bottom(12)
+        self.add(outer)
+
+        toolbar = Gtk.Grid(column_spacing=8)
+        toolbar.attach(Gtk.Label(label="Provider"), 0, 0, 1, 1)
+        self.provider = Gtk.Entry()
+        self.provider.set_text(self.config.get("provider", "http://localhost:11434"))
+        toolbar.attach(self.provider, 1, 0, 1, 1)
+        toolbar.attach(Gtk.Label(label="Model"), 2, 0, 1, 1)
+        self.model = Gtk.Entry()
+        self.model.set_text(self.config.get("model", "llama3.2"))
+        toolbar.attach(self.model, 3, 0, 1, 1)
+        self.key = Gtk.Entry(); self.key.set_visibility(False)
+        toolbar.attach(Gtk.Label(label="API key"), 0, 1, 1, 1)
+        toolbar.attach(self.key, 1, 1, 3, 1)
+        outer.pack_start(toolbar, False, False, 0)
+
+        scrolled = Gtk.ScrolledWindow()
+        scrolled.set_vexpand(True)
+        self.history = Gtk.TextView(editable=False, cursor_visible=False)
+        self.history.set_wrap_mode(Gtk.WrapMode.WORD)
+        scrolled.add(self.history)
+        outer.pack_start(scrolled, True, True, 0)
+        self.buffer = self.history.get_buffer()
+        self.load_history()
+
+        bottom = Gtk.Box(spacing=8)
+        self.prompt = Gtk.Entry()
+        self.prompt.connect("activate", self.send)
+        bottom.pack_start(self.prompt, True, True, 0)
+        send = Gtk.Button(label="Send")
+        send.connect("clicked", self.send)
+        bottom.pack_start(send, False, False, 0)
+        outer.pack_start(bottom, False, False, 0)
+        self.status = Gtk.Label(label="Ready")
+        outer.pack_start(self.status, False, False, 0)
+
+    def load_config(self):
+        self.config = {}
+        try:
+            with open(CONFIG_FILE, "r", encoding="utf-8") as handle:
+                self.config = json.load(handle)
+        except (FileNotFoundError, json.JSONDecodeError):
+            pass
+
+    def save_config(self):
+        data = {"provider": self.provider.get_text().strip(),
+                "model": self.model.get_text().strip()}
+        os.makedirs(CONFIG_DIR, mode=0o700, exist_ok=True)
+        with open(CONFIG_FILE, "w", encoding="utf-8") as handle:
+            json.dump(data, handle)
+        os.chmod(CONFIG_FILE, 0o600)
+        api_key = self.key.get_text()
+        if api_key:
+            try:
+                keyring.set_password("KOS AI", "api-key", api_key)
+            except Exception:
+                fallback = os.path.join(CONFIG_DIR, "api-key")
+                with open(fallback, "w", encoding="utf-8") as handle:
+                    handle.write(api_key)
+                os.chmod(fallback, 0o600)
+
+    def load_history(self):
+        try:
+            with open(HISTORY_FILE, "r", encoding="utf-8") as handle:
+                entries = json.load(handle)
+            for entry in entries[-100:]:
+                self.buffer.insert_at_cursor(f"You: {entry['prompt']}\nAI: {entry['reply']}\n\n")
+        except (FileNotFoundError, json.JSONDecodeError):
+            pass
+
+    def append_history(self, prompt, reply):
+        entries = []
+        try:
+            with open(HISTORY_FILE, "r", encoding="utf-8") as handle:
+                entries = json.load(handle)
+        except (FileNotFoundError, json.JSONDecodeError):
+            pass
+        entries.append({"prompt": prompt, "reply": reply})
+        with open(HISTORY_FILE, "w", encoding="utf-8") as handle:
+            json.dump(entries[-100:], handle)
+        os.chmod(HISTORY_FILE, 0o600)
+
+    def send(self, *_args):
+        prompt = self.prompt.get_text().strip()
+        if not prompt:
+            return
+        self.save_config()
+        self.prompt.set_text("")
+        self.buffer.insert_at_cursor(f"You: {prompt}\n")
+        self.status.set_text("Thinking...")
+        threading.Thread(target=self.request, args=(prompt,), daemon=True).start()
+
+    def request(self, prompt):
+        endpoint = self.provider.get_text().strip().rstrip("/")
+        model = self.model.get_text().strip()
+        api_key = self.key.get_text().strip()
+        if not api_key:
+            try:
+                api_key = keyring.get_password("KOS AI", "api-key") or ""
+            except Exception:
+                try:
+                    with open(os.path.join(CONFIG_DIR, "api-key"), "r", encoding="utf-8") as handle:
+                        api_key = handle.read().strip()
+                except FileNotFoundError:
+                    api_key = ""
+        headers = {"Content-Type": "application/json"}
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+        try:
+            response = requests.post(
+                endpoint + "/v1/chat/completions",
+                headers=headers,
+                json={"model": model, "messages": [{"role": "user", "content": prompt}]},
+                timeout=60)
+            response.raise_for_status()
+            data = response.json()
+            reply = data["choices"][0]["message"]["content"]
+        except requests.RequestException as error:
+            reply = f"Connection error: {error}"
+        except (KeyError, ValueError, IndexError) as error:
+            reply = f"Invalid provider response: {error}"
+        Gdk.threads_add_idle(Gdk.PRIORITY_DEFAULT_IDLE, self.finish_reply, prompt, reply)
+
+    def finish_reply(self, prompt, reply):
+        self.buffer.insert_at_cursor(f"AI: {reply}\n\n")
+        self.status.set_text("Ready")
+        self.append_history(prompt, reply)
+        return False
+
+if __name__ == "__main__":
+    win = KOSAI()
+    win.connect("destroy", Gtk.main_quit)
+    win.show_all()
+    Gtk.main()

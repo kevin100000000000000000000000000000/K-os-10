@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=Install KOS
+Comment=Install KOS 1.0 to an internal or external disk
+Exec=calamares
+Icon=drive-harddisk
+Terminal=false
+Type=Application
+Categories=System;Utility;X-KOS;

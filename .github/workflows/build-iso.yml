@@ -1,0 +1,84 @@
+name: Build KOS 1.0 ISO
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate source
+        run: python3 tests/test_kos_config.py
+
+  build:
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free unneeded runner space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          df -h
+
+      - name: Build ISO
+        run: |
+          docker run --rm --privileged \
+            -v "$PWD:/build" -w /build debian:bookworm \
+            bash -lc '
+              apt-get update &&
+              apt-get install -y --no-install-recommends live-build debootstrap xorriso squashfs-tools grub-pc-bin grub-efi-amd64-bin grub-efi-amd64-signed mtools dosfstools &&
+              mkdir -p /build/logs &&
+              chmod +x auto/config &&
+              ./auto/config &&
+              lb clean &&
+              lb config &&
+              lb build 2>&1 | tee /build/logs/live-build.log
+              test ${PIPESTATUS[0]} -eq 0
+            '
+
+      - name: Locate and checksum ISO
+        run: |
+          set -eu
+          iso="$(find . -maxdepth 1 -type f -name '*.iso' -print -quit)"
+          test -n "$iso"
+          mv "$iso" KOS-1.0-amd64.iso
+          sha256sum KOS-1.0-amd64.iso > SHA256SUMS
+
+      - name: Upload build artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: KOS-1.0-amd64
+          path: |
+            KOS-1.0-amd64.iso
+            SHA256SUMS
+            logs/
+          if-no-files-found: warn
+          retention-days: 30
+
+  boot-test:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: KOS-1.0-amd64
+          path: dist
+      - name: Install QEMU
+        run: sudo apt-get update && sudo apt-get install -y qemu-system-x86
+      - name: Boot-test ISO
+        run: |
+          chmod +x scripts/test-iso-boot.sh
+          scripts/test-iso-boot.sh dist/KOS-1.0-amd64.iso dist/kos-qemu.log

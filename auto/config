@@ -1,0 +1,25 @@
+#!/bin/sh
+
+lb config noauto \
+    --distribution bookworm \
+    --architecture amd64 \
+    --debian-installer live \
+    --debian-installer-distribution bookworm \
+    --bootappend-live "boot=live components quiet splash console=tty0 console=ttyS0,115200n8" \
+    --binary-images iso-hybrid \
+    --iso-application "KOS 1.0" \
+    --iso-publisher "KOS Project" \
+    --iso-volume "KOS_1.0_AMD64" \
+    --apt-indices true \
+    --apt-recommends true \
+    --archive-areas "main contrib non-free non-free-firmware" \
+    --linux-flavours amd64 \
+    --mirror-bootstrap "http://deb.debian.org/debian/" \
+    --mirror-chroot "http://deb.debian.org/debian/" \
+    --mirror-binary "http://deb.debian.org/debian/" \
+    --security true \
+    --memtest none \
+    --bootloaders "grub-pc,grub-efi" \
+    --firmware-binary true \
+    --firmware-chroot true \
+    "${@}"
