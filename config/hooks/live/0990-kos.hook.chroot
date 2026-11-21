@@ -16,6 +16,7 @@ polkit.addRule(function(action, subject) {
 });
 EOF
 
+install -d -m 0755 /etc/lightdm/lightdm.conf.d
 cat > /etc/lightdm/lightdm.conf.d/50-kos.conf <<'EOF'
 [Seat:*]
 greeter-session=lightdm-gtk-greeter
