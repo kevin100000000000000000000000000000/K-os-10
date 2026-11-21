@@ -36,7 +36,7 @@ jobs:
             -v "$PWD:/build" -w /build debian:bookworm \
             bash -lc '
               apt-get update &&
-              apt-get install -y --no-install-recommends live-build debootstrap xorriso squashfs-tools grub-pc-bin grub-efi-amd64-bin grub-efi-amd64-signed mtools dosfstools &&
+              apt-get install -y --no-install-recommends live-build debootstrap xorriso squashfs-tools cpio grub-pc-bin grub-efi-amd64-bin grub-efi-amd64-signed mtools dosfstools &&
               mkdir -p /build/logs &&
               chmod +x auto/config &&
               ./auto/config &&
