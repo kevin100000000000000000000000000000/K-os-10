@@ -5,7 +5,7 @@ calamares
 calamares-settings-debian
 sudo
 network-manager
-network-manager-applet
+network-manager-gnome
 ufw
 openssh-client
 
